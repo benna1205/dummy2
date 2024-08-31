@@ -1,0 +1,89 @@
+---
+- hosts: localhost
+  connection: local
+  vars:
+    vpc: 10.0.0.0/16
+    public: 10.0.1.0/24
+    private: 10.0.2.0/24
+  tasks:
+    - name: create a VPC with dedicated tenancy and request an IPv6 CIDR
+      amazon.aws.ec2_vpc_net:
+        name: vpc 
+        cidr_block: "{{vpc}}"
+          #ipv4_cidr: true
+        aws_access_key: "{{ec2_access_key}}"  # From vault as defined
+        aws_secret_key: "{{ec2_secret_key}}"
+        region: ap-south-1
+      register: test_vpc
+    - name: Print the return code
+      debug:
+        msg: "The command return code is: {{ test_vpc }}"
+    - name: creating the internet gateway
+      amazon.aws.ec2_vpc_igw:
+        vpc_id: "{{test_vpc.vpc.id}}"
+        state: absent
+        region: ap-south-1
+        aws_access_key: "{{ec2_access_key}}"  # From vault as defined
+        aws_secret_key: "{{ec2_secret_key}}"
+      register: internet_way
+    - name: Print the return code
+      debug:
+        msg: "The command return code is: {{ internet_way }}"
+    - name: attaching the IG to VPC
+      amazon.aws.ec2_vpc_igw:
+        vpc_id: "{{test_vpc.vpc.id}}"
+        internet_gateway_id: "{{internet_way.gateway_id}}"
+        aws_access_key: "{{ec2_access_key}}"  # From vault as defined
+        aws_secret_key: "{{ec2_secret_key}}"
+        state: absent
+        region: ap-south-1
+        ignore_error: true
+    - name: creating public subnet
+      amazon.aws.ec2_vpc_subnet:
+        state: absent
+        vpc_id: "{{test_vpc.vpc.id}}"
+        cidr: "{{public}}"
+        aws_access_key: "{{ec2_access_key}}"  # From vault as defined
+        aws_secret_key: "{{ec2_secret_key}}"
+        map_public: true
+        region: ap-south-1
+        az: ap-south-1a
+      register: publicid
+    - name: Print the return code
+      debug:
+        msg: "The command return code is: {{ publicid}}"
+    - name: creating private subnet
+      amazon.aws.ec2_vpc_subnet:
+        state: absent
+        vpc_id: "{{test_vpc.vpc.id}}"
+        cidr: "{{private}}"
+        aws_access_key: "{{ec2_access_key}}"  # From vault as defined
+        aws_secret_key: "{{ec2_secret_key}}"
+        map_public: false
+        region: ap-south-1
+        az: ap-south-1b
+      register: privateid
+    - name: Print the return code
+      debug:
+        msg: "The command return code is: {{privateid}}" 
+    - name: start an instance with a public IP address
+      amazon.aws.ec2_instance:
+        name: "public-compute-instance"
+        key_name: "apsouth"
+        state: absent
+        vpc_subnet_id: "{{publicid.subnet.id}}"
+        region: ap-south-1
+        aws_access_key: "{{ec2_access_key}}"  # From vault as defined
+        aws_secret_key: "{{ec2_secret_key}}"
+        instance_type: t2.micro
+        security_group: default
+        network:
+          assign_public_ip: true
+        image_id: ami-02b49a24cfb95941c
+        tags:
+          Environment: Test
+      register: ec2
+    - name: Print the return code
+      debug:
+        msg: "The command return code is:{{ec2}}"        
+
